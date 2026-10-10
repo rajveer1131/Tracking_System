@@ -20,7 +20,12 @@ This project is a white-label shipment tracking service that connects multiple r
    - Live airway bill tracking via `GET {base_url}/tracking?airway_bill={awb}`.
    - Authenticated via `Authorization: Bearer <token>`.
    - Supports checkpoints with dates, times, locations, and remarks (e.g. `DK00001`).
-3. **Demo / Mock Fixtures**:
+3. **QuickShip Express**:
+   - Live order tracking via `GET https://qsapi.quickshipnow.com/public/v1/track/order?awb={awb}`.
+   - Authenticated via `x-api-key` and `Authorization: Bearer <key>` headers.
+   - Auto-detected for `QS`-prefixed AWBs (e.g. `QS20000319`, `QS2109880`).
+   - eventDate format: `"DD-MM-YYYY hh:mm AM/PM"` — handled by enhanced timestamp parser.
+4. **Demo / Mock Fixtures**:
    - Strictly isolated behind `ENABLE_MOCK=true`.
    - Nonexistent tracking numbers return a clean `404 Not Found` in production.
 
@@ -102,3 +107,33 @@ Run tests anytime with:
 ```bash
 npm test
 ```
+
+---
+
+## Changelog
+
+### v1.3.0 — 2026-10-10 — QuickShip Express Integration
+
+**New Features:**
+- Added **`adapters/quickship.js`**: Full integration for the QuickShip Express API.
+  - Endpoint: `GET https://qsapi.quickshipnow.com/public/v1/track/order?awb={awb}`
+  - Auth: `x-api-key` + `Authorization: Bearer <key>` headers (dual header support).
+  - Offline demo fixture for `QS20000319` (active when `ENABLE_MOCK=true`).
+  - Correct HTTP error handling: 400, 401/403, 404, 500.
+  - Normalizes `data.events[]` into unified `TrackingResult` contract (sorted newest-first).
+- Enhanced **`adapters/utils.js`** timestamp parser:
+  - Now handles `"DD-MM-YYYY hh:mm AM/PM"` format (QuickShip eventDate style).
+  - Correctly converts 12-hour clock (12 AM → 0, 12 PM → 12) to 24-hour before Date parsing.
+  - Legacy 24-hour and ISO formats remain fully supported.
+- Registered QuickShip in **`adapters/index.js`**:
+  - Added `quickship` to `SUPPORTED_CARRIERS` with auto-detect pattern `/^QS\d+$/i`.
+  - Auto-detection runs before cargo check (more specific QS prefix takes priority).
+  - Added `case "quickship"` to the central `trackShipment()` dispatch.
+- Updated **`.env.example`**: Added `QUICKSHIP_API_BASE_URL` and `QUICKSHIP_API_KEY` credential slots.
+- Updated **`public/index.html`**:
+  - Added `🚀 QuickShip (QS...)` option to carrier dropdown.
+  - Added `#QS20000319 • QuickShip In Transit` sample order pill (violet colour).
+- Added **2 new test suites** in `tests/test_tracker.js`:
+  - Suite 7 — QuickShip Normalization: schema contract, event sorting, milestone inference, progress.
+  - Timestamp parser tests: AM/PM, midnight, noon, legacy 24h + separate timeStr.
+- All **14 tests passing** (`npm test`).

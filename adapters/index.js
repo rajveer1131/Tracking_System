@@ -5,6 +5,7 @@ const { AppError } = require("./errors");
 const { trackFlightGo } = require("./flightgo");
 const { trackCargo } = require("./cargo");
 const { trackMock } = require("./mock");
+const { trackQuickShip } = require("./quickship");
 
 // Registered carriers and their documented formats
 const SUPPORTED_CARRIERS = {
@@ -17,6 +18,11 @@ const SUPPORTED_CARRIERS = {
     id: "cargo",
     name: "Air Cargo Logistics",
     supportsPattern: (tn) => /^DK\d{5,}$/i.test(tn) || /^[A-Z]{2,4}\d{4,}$/i.test(tn) // e.g. DK00001
+  },
+  quickship: {
+    id: "quickship",
+    name: "QuickShip Express",
+    supportsPattern: (tn) => /^QS\d+$/i.test(tn) // e.g. QS20000319, QS2109880
   },
   mock: {
     id: "mock",
@@ -44,6 +50,9 @@ function resolveCarrier(trackingNumber, requestedCarrier = "auto") {
   // 2. Auto-detection rules based on documented courier patterns
   if (SUPPORTED_CARRIERS.mock.supportsPattern(tn)) {
     return "mock";
+  }
+  if (SUPPORTED_CARRIERS.quickship.supportsPattern(tn)) {
+    return "quickship";
   }
   if (SUPPORTED_CARRIERS.cargo.supportsPattern(tn)) {
     return "cargo";
@@ -83,6 +92,9 @@ async function trackShipment(trackingNumber, requestedCarrier = "auto") {
     case "cargo":
       result = await trackCargo(tn);
       break;
+    case "quickship":
+      result = await trackQuickShip(tn);
+      break;
     case "mock":
       if (process.env.ENABLE_MOCK !== "true" && process.env.NODE_ENV === "production") {
         throw new AppError(403, "Mock provider is disabled in production.");
@@ -92,6 +104,7 @@ async function trackShipment(trackingNumber, requestedCarrier = "auto") {
     default:
       throw new AppError(400, `No adapter available for carrier '${carrierId}'.`);
   }
+
 
   // White-label display masking
   const hideProvider = process.env.HIDE_CARRIER_PROVIDER === "true";

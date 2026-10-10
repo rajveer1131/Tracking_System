@@ -6,9 +6,10 @@ const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 
 const { resolveCarrier, trackShipment, SUPPORTED_CARRIERS } = require("../adapters");
-const { inferMilestone, normalizeShipmentStatus, calculateProgress } = require("../adapters/utils");
+const { inferMilestone, normalizeShipmentStatus, calculateProgress, parseEventTimestamp } = require("../adapters/utils");
 const { normalizeFlightGo } = require("../adapters/flightgo");
 const { normalizeCargoResponse } = require("../adapters/cargo");
+const { normalizeQuickShip } = require("../adapters/quickship");
 
 describe("1. Carrier Resolution & Detection", () => {
   test("Resolves 6-8 digit numeric AWB to flightgo", () => {
@@ -21,9 +22,16 @@ describe("1. Carrier Resolution & Detection", () => {
     assert.equal(resolveCarrier("DK99999", "auto"), "cargo");
   });
 
+  test("Resolves QS-prefixed AWB to quickship", () => {
+    assert.equal(resolveCarrier("QS20000319", "auto"), "quickship");
+    assert.equal(resolveCarrier("QS2109880", "auto"), "quickship");
+    assert.equal(resolveCarrier("qs20000319", "auto"), "quickship"); // case-insensitive
+  });
+
   test("Explicit carrier overrides auto-detection", () => {
     assert.equal(resolveCarrier("658504", "cargo"), "cargo");
     assert.equal(resolveCarrier("DK00001", "flightgo"), "flightgo");
+    assert.equal(resolveCarrier("QS20000319", "flightgo"), "flightgo");
   });
 
   test("Rejects unsupported carrier with 400 error", () => {
@@ -151,5 +159,88 @@ describe("6. Express Server API Validation & Security", () => {
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
+  });
+});
+
+describe("7. QuickShip Normalization & Date Parsing", () => {
+  test("Normalizes QuickShip API response into unified contract", () => {
+    const rawData = {
+      awb: "QS20000319",
+      lmAwb: null,
+      status: "In Transit",
+      events: [
+        {
+          location: null,
+          statusCode: "101",
+          statusRemark: "Booked",
+          subStatusRemark: null,
+          awb: "QS20000319",
+          eventDate: "23-08-2025 09:48 AM"
+        },
+        {
+          location: "Delhi Hub",
+          statusCode: "201",
+          statusRemark: "Picked up from shipper",
+          subStatusRemark: null,
+          awb: "QS20000319",
+          eventDate: "23-08-2025 02:15 PM"
+        },
+        {
+          location: "Delhi Sorting Centre",
+          statusCode: "205",
+          statusRemark: "In Transit - Departed sorting hub",
+          subStatusRemark: null,
+          awb: "QS20000319",
+          eventDate: "23-08-2025 08:30 PM"
+        }
+      ]
+    };
+
+    const res = normalizeQuickShip("QS20000319", rawData);
+    assert.equal(res.tracking_number, "QS20000319");
+    assert.equal(res.carrier_code, "quickship");
+    assert.equal(res.status, "in_transit");
+    assert.equal(res.checkpoints.length, 3);
+
+    // Newest first: 08:30 PM > 02:15 PM > 09:48 AM
+    assert.ok(res.checkpoints[0].status.toLowerCase().includes("transit"));
+    assert.equal(res.checkpoints[2].milestone, "pickup"); // Booked = pickup
+
+    // Progress should be in_transit percentage
+    assert.equal(res.progress_percentage, 65);
+  });
+
+  test("Parses QuickShip AM/PM eventDate into valid ISO timestamp", () => {
+    // The parser creates a local-time Date. ISO output is UTC, so we verify using Date methods.
+    const morning = parseEventTimestamp("23-08-2025 09:48 AM");
+    assert.ok(!isNaN(morning.date.getTime()), "09:48 AM date should be valid");
+    assert.equal(morning.date.getFullYear(), 2025, "Year should be 2025");
+    assert.equal(morning.date.getMonth(), 7, "Month should be August (0-indexed)");
+    assert.equal(morning.date.getDate(), 23, "Day should be 23");
+    assert.equal(morning.date.getHours(), 9, "09:48 AM → hour 9");
+    assert.equal(morning.date.getMinutes(), 48, "09:48 AM → minute 48");
+
+    const afternoon = parseEventTimestamp("23-08-2025 02:15 PM");
+    assert.ok(!isNaN(afternoon.date.getTime()), "02:15 PM date should be valid");
+    assert.equal(afternoon.date.getHours(), 14, "02:15 PM → hour 14 (24h)");
+    assert.equal(afternoon.date.getMinutes(), 15, "02:15 PM → minute 15");
+
+    const midnight = parseEventTimestamp("01-01-2025 12:00 AM");
+    assert.ok(!isNaN(midnight.date.getTime()), "12:00 AM date should be valid");
+    assert.equal(midnight.date.getHours(), 0, "12:00 AM → hour 0 (midnight)");
+
+    const noon = parseEventTimestamp("01-01-2025 12:00 PM");
+    assert.ok(!isNaN(noon.date.getTime()), "12:00 PM date should be valid");
+    assert.equal(noon.date.getHours(), 12, "12:00 PM → hour 12 (noon)");
+  });
+
+  test("Legacy 24-hour DD-MM-YYYY + separate timeStr still works (Cargo format)", () => {
+    const ts = parseEventTimestamp("2025-05-08", "10:30");
+    assert.ok(!isNaN(ts.date.getTime()), "Cargo date should be valid");
+    assert.equal(ts.date.getFullYear(), 2025, "Year 2025");
+    assert.equal(ts.date.getMonth(), 4, "Month May (0-indexed = 4)");
+    assert.equal(ts.date.getDate(), 8, "Day 8");
+    assert.equal(ts.date.getHours(), 10, "Hour 10");
+    assert.equal(ts.date.getMinutes(), 30, "Minute 30");
   });
 });

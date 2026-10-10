@@ -91,6 +91,7 @@
               <option value="auto" selected>⚡ Auto-Detect</option>
               <option value="flightgo">✈️ FlightGo Express</option>
               <option value="cargo">📦 Air Cargo (AWB)</option>
+              <option value="quickship">🚀 QuickShip (QS...)</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -130,13 +131,13 @@
         <div class="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-600">
           <span class="font-medium text-slate-500">Sample Orders:</span>
           <button type="button" onclick="quickFill('658504')" class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 hover:bg-emerald-100 transition shadow-sm">
-            #658504 • Delivered
-          </button>
-          <button type="button" onclick="quickFill('27092730')" class="px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 hover:bg-blue-100 transition shadow-sm">
-            #27092730 • In Transit
+            #658504 • FlightGo Delivered
           </button>
           <button type="button" onclick="quickFill('DK00001')" class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 hover:bg-indigo-100 transition shadow-sm">
             #DK00001 • Cargo Delivered
+          </button>
+          <button type="button" onclick="quickFill('QS20000319')" class="px-3 py-1 rounded-full bg-violet-50 text-violet-700 font-semibold border border-violet-200 hover:bg-violet-100 transition shadow-sm">
+            #QS20000319 • QuickShip In Transit
           </button>
         </div>
       </div>
