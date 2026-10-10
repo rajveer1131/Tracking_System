@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50 text-slate-900">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrackFlow — Universal Parcel & Shipping Tracker</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-full flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Top Navigation -->
+  <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
+        </div>
+        <div>
+          <span id="brandNameText" class="text-xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">B.S. International</span>
+          <span id="brandBadge" class="hidden sm:inline-block ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Tracking Portal</span>
+        </div>
+      </div>
+
+      <!-- Action items -->
+      <div class="flex items-center space-x-3">
+        <!-- Active Provider Indicator Pill (Hidden in Stealth Mode) -->
+        <div id="activeProviderPill" class="hidden sm:flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer hover:bg-slate-200 transition" onclick="openSettingsModal()">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Engine: <strong id="activeProviderName" class="font-semibold text-slate-900">Mock</strong></span>
+        </div>
+
+        <!-- Settings Button (Hidden in Stealth Mode) -->
+        <button id="openSettingsBtn" onclick="openSettingsModal()" class="inline-flex items-center space-x-2 px-3.5 py-1.5 text-sm font-medium rounded-lg text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>Connect API</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    
+    <!-- Hero / Search Section -->
+    <div class="relative bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-sm overflow-hidden">
+      <!-- Subtle background decoration -->
+      <div class="absolute -top-24 -right-24 w-80 h-80 bg-blue-100/60 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-100/60 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative z-10 max-w-3xl mx-auto text-center space-y-4">
+        <h1 id="heroTitle" class="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+          Track Your Shipment
+        </h1>
+        <p id="heroTagline" class="text-slate-600 text-sm sm:text-base max-w-xl mx-auto">
+          Enter your Tracking or AWB number below for real-time shipment updates.
+        </p>
+
+        <!-- Search Form -->
+        <form id="trackForm" onsubmit="handleTrack(event)" class="mt-6 flex flex-col sm:flex-row items-stretch gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-300 shadow-inner">
+          
+          <!-- Carrier Dropdown (Can be hidden via .env HIDE_CARRIER_PROVIDER) -->
+          <div id="carrierSelectContainer" class="relative sm:w-48 flex-shrink-0">
+            <select id="carrierSelect" class="w-full h-12 bg-white text-slate-700 text-sm font-medium rounded-xl border border-slate-300 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none cursor-pointer">
+              <option value="auto">⚡ Auto-Detect</option>
+              <option value="flightgo" selected>✈️ FlightGo Express</option>
+              <option value="fedex">FedEx</option>
+              <option value="ups">UPS</option>
+              <option value="dhl">DHL Express</option>
+              <option value="usps">USPS</option>
+              <option value="custom">Custom API</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </div>
+
+          <!-- Tracking Number Input -->
+          <div class="relative flex-1">
+            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+            <input 
+              type="text" 
+              id="trackingInput" 
+              value="658504"
+              placeholder="Enter tracking number (e.g. 658504)..." 
+              required
+              class="w-full h-12 bg-white text-slate-900 text-sm sm:text-base rounded-xl border border-slate-300 pl-11 pr-4 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
+            />
+          </div>
+
+          <!-- Submit Button -->
+          <button 
+            type="submit" 
+            id="trackSubmitBtn"
+            class="h-12 px-7 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm sm:text-base rounded-xl shadow-md shadow-blue-500/20 transition flex items-center justify-center space-x-2 flex-shrink-0"
+          >
+            <span id="btnText">Track Package</span>
+            <svg id="btnSpinner" class="hidden animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </button>
+        </form>
+
+        <!-- Sample Order Pills (No external carrier names) -->
+        <div class="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-600">
+          <span class="font-medium text-slate-500">Sample Orders:</span>
+          <button type="button" onclick="quickFill('658504')" class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 hover:bg-emerald-100 transition shadow-sm">
+            #658504 • Delivered
+          </button>
+          <button type="button" onclick="quickFill('27092730')" class="px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 hover:bg-blue-100 transition shadow-sm">
+            #27092730 • In Transit
+          </button>
+          <button type="button" onclick="quickFill('8472910')" class="px-3 py-1 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-200 hover:bg-amber-100 transition shadow-sm">
+            #8472910 • Out for Delivery
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error Banner -->
+    <div id="errorAlert" class="hidden p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-start space-x-3">
+      <svg class="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div class="flex-1">
+        <strong class="font-semibold" id="errorMessage">Unable to retrieve tracking details.</strong>
+        <p class="text-xs text-rose-600 mt-1">Check that the tracking number is valid, or open <strong>Connect API</strong> to verify your API keys.</p>
+      </div>
+      <button onclick="dismissError()" class="text-rose-400 hover:text-rose-600">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Tracking Results Section -->
+    <div id="resultsContainer" class="hidden space-y-6">
+      
+      <!-- Top Overview Card -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+        
+        <!-- Header: Tracking ID & Quick Actions -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span id="carrierBadge" class="text-xs font-bold px-2.5 py-1 rounded-md bg-blue-100 text-blue-800 uppercase tracking-wide">Carrier</span>
+              <span id="providerBadge" class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">Mock Engine</span>
+            </div>
+            <div class="flex items-center space-x-3 mt-2">
+              <h2 id="trackingNumberDisplay" class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 font-mono">TN-00000000</h2>
+              <button onclick="copyTrackingNumber()" title="Copy tracking number" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+                <svg id="copyIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span id="copyFeedback" class="hidden text-xs text-emerald-600 font-semibold">Copied!</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Status Badge & Share -->
+          <div class="flex items-center space-x-3">
+            <div id="statusBadge" class="px-4 py-2 rounded-xl text-sm font-bold flex items-center space-x-2 shadow-sm bg-blue-50 text-blue-700 border border-blue-200">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+              <span id="statusBadgeText">In Transit</span>
+            </div>
+            <button onclick="shareTrackingLink()" title="Share Link" class="p-2.5 rounded-xl text-slate-500 bg-slate-100 hover:bg-slate-200 transition">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Visual Milestone Stepper -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span>Shipment Progress</span>
+            <span id="progressPercentText" class="text-slate-900 font-bold">65%</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+            <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-700" style="width: 65%"></div>
+          </div>
+
+          <!-- Milestone Steps Grid -->
+          <div class="grid grid-cols-4 gap-2 pt-2 text-center text-xs">
+            <div id="stepInfo" class="space-y-1">
+              <div class="w-6 h-6 mx-auto rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow">✓</div>
+              <p class="font-medium text-slate-800">Label Created</p>
+            </div>
+            <div id="stepPickup" class="space-y-1">
+              <div class="w-6 h-6 mx-auto rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow">✓</div>
+              <p class="font-medium text-slate-800">Picked Up</p>
+            </div>
+            <div id="stepTransit" class="space-y-1">
+              <div class="w-6 h-6 mx-auto rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow">✓</div>
+              <p class="font-medium text-slate-800">In Transit</p>
+            </div>
+            <div id="stepDelivered" class="space-y-1">
+              <div class="w-6 h-6 mx-auto rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-xs">4</div>
+              <p class="font-medium text-slate-400">Delivered</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shipment Key Highlights Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Estimated Delivery</span>
+            <p id="estDeliveryDisplay" class="text-base font-bold text-slate-900 mt-1">Oct 14, 2026, 4:00 PM</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Origin</span>
+            <p id="originDisplay" class="text-base font-bold text-slate-900 mt-1">Memphis, TN, US</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Destination</span>
+            <p id="destDisplay" class="text-base font-bold text-slate-900 mt-1">Seattle, WA, US</p>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <span class="text-xs text-slate-500 uppercase tracking-wider font-semibold">Service Type</span>
+            <p id="serviceDisplay" class="text-base font-bold text-slate-900 mt-1">Priority Express</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Checkpoints Timeline Section -->
+      <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div>
+            <h3 class="text-xl font-bold text-slate-900">Tracking History & Checkpoints</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Detailed scan updates in chronological order</p>
+          </div>
+          <button onclick="toggleTimelineSort()" id="sortToggleBtn" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center space-x-1.5">
+            <span>Newest first</span>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+          </button>
+        </div>
+
+        <!-- Timeline container -->
+        <div id="timelineContainer" class="relative pl-6 sm:pl-8 space-y-6">
+          <!-- Dynamic checkpoint nodes will be injected here -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Recent History Drawer / Cards -->
+    <div id="recentHistorySection" class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h3 class="text-lg font-bold text-slate-900">Recent Tracking Inquiries</h3>
+        </div>
+        <button onclick="clearHistory()" class="text-xs font-medium text-slate-500 hover:text-rose-600 transition">Clear All</button>
+      </div>
+
+      <div id="recentHistoryList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="mt-auto border-t border-slate-200 bg-white py-6">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500 space-y-2">
+      <p>Universal Parcel Tracker &bull; Built with modular multi-carrier adapter architecture.</p>
+      <p>Supports Ship24, 17TRACK, FedEx, UPS, DHL, USPS, and custom REST API endpoints.</p>
+    </div>
+  </footer>
+
+  <!-- SETTINGS & API CONNECTOR MODAL -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6 transform transition-all">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-slate-900">API Connection & Settings</h3>
+            <p class="text-xs text-slate-500">Configure your tracking providers and carrier APIs</p>
+          </div>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Settings Tabs -->
+      <div class="flex border-b border-slate-200 gap-4 text-sm font-semibold">
+        <button onclick="switchSettingsTab('providersTab')" id="tabBtn-providersTab" class="pb-3 border-b-2 border-blue-600 text-blue-600">
+          Active Engine
+        </button>
+        <button onclick="switchSettingsTab('keysTab')" id="tabBtn-keysTab" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+          Carrier API Keys
+        </button>
+        <button onclick="switchSettingsTab('customTab')" id="tabBtn-customTab" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+          Custom REST API
+        </button>
+      </div>
+
+      <!-- TAB 1: Active Provider Selection -->
+      <div id="providersTab" class="space-y-4">
+        <p class="text-xs text-slate-600">Select which tracking engine processes live inquiries:</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="providerCardsGrid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- TAB 2: Commercial Carrier API Keys -->
+      <div id="keysTab" class="hidden space-y-4">
+        <p class="text-xs text-slate-600">Enter your API keys for standard global aggregators:</p>
+        
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Ship24 API Key</label>
+            <input type="password" id="ship24KeyInput" placeholder="Enter Ship24 Bearer Token" class="w-full h-10 px-3 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+            <span class="text-[11px] text-slate-400">Get free tier key from ship24.com</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">17TRACK API Token (17token)</label>
+            <input type="password" id="seventeenTrackKeyInput" placeholder="Enter 17TRACK Security Token" class="w-full h-10 px-3 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+            <span class="text-[11px] text-slate-400">Get free tier token from api.17track.net</span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">AfterShip API Key (as-api-key)</label>
+            <input type="password" id="aftershipKeyInput" placeholder="Enter AfterShip API Key" class="w-full h-10 px-3 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+            <span class="text-[11px] text-slate-400">Get free key from aftership.com</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Custom REST API Builder -->
+      <div id="customTab" class="hidden space-y-4 text-xs">
+        <p class="text-slate-600">Connect any custom company backend or third-party endpoint:</p>
+        
+        <div class="space-y-3">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Endpoint URL (use {tracking_number} placeholder)</label>
+            <input type="text" id="customUrlInput" placeholder="https://api.mycompany.com/v1/tracking/{tracking_number}" class="w-full h-10 px-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">HTTP Method</label>
+              <select id="customMethodSelect" class="w-full h-10 px-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Authorization Header (optional)</label>
+              <input type="text" id="customAuthHeaderInput" placeholder="Bearer my-secret-token" class="w-full h-10 px-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono">
+            </div>
+          </div>
+
+          <!-- JSON Path Mappings -->
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <span class="font-bold text-slate-800">JSON Field Dot-Notation Mapping</span>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Status Path</label>
+                <input type="text" id="mapStatusPath" placeholder="data.status" value="status" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Carrier Path</label>
+                <input type="text" id="mapCarrierPath" placeholder="carrier" value="carrier" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Origin Path</label>
+                <input type="text" id="mapOriginPath" placeholder="origin" value="origin" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Destination Path</label>
+                <input type="text" id="mapDestPath" placeholder="destination" value="destination" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Checkpoints List Path</label>
+                <input type="text" id="mapCheckpointsPath" placeholder="events" value="checkpoints" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-500 uppercase">Est. Delivery Path</label>
+                <input type="text" id="mapEstDeliveryPath" placeholder="estimated_delivery" value="estimated_delivery" class="w-full h-8 px-2 rounded-lg border border-slate-300 font-mono">
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Custom API Test -->
+          <div class="flex items-center space-x-2">
+            <button type="button" onclick="testCustomApi()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium transition flex items-center space-x-1">
+              <span>Test Endpoint</span>
+            </button>
+            <span id="testCustomResult" class="text-xs font-semibold"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save & Close Buttons -->
+      <div class="flex items-center justify-between pt-4 border-t border-slate-100">
+        <span id="saveStatusMsg" class="text-xs font-medium text-emerald-600"></span>
+        <div class="flex items-center space-x-3">
+          <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 text-sm font-medium rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button type="button" onclick="saveSettings()" class="px-5 py-2 text-sm font-medium rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition">
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
