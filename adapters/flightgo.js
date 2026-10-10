@@ -1,9 +1,13 @@
 /**
- * FlightGo Express Adapter for Node.js
- * Uses Node's native https module to safely handle requests with JSON payloads.
+ * FlightGo Express Adapter
+ * Connects to https://flightgoexpress.com/api/track
+ * Requires FLIGHTGO_API_KEY from environment variables.
  */
 const https = require("https");
+const { AppError } = require("./errors");
+const { inferMilestone, normalizeShipmentStatus, calculateProgress, parseEventTimestamp } = require("./utils");
 
+// Offline demo fixtures (only active when ENABLE_MOCK=true)
 const SAMPLE_FLIGHTGO = {
   "658504": {
     tracking_code: "658504",
@@ -99,22 +103,23 @@ const SAMPLE_FLIGHTGO = {
 };
 
 /**
- * Send HTTP request supporting both POST and GET with body
+ * Native HTTPS helper to allow sending payloads with method POST or GET without W3C fetch errors.
  */
-function makeRequest(urlStr, method, headers, payload) {
+function requestFlightGo(method, headers, payload) {
   return new Promise((resolve, reject) => {
-    const url = new URL(urlStr);
     const dataString = payload ? JSON.stringify(payload) : "";
 
     const options = {
-      hostname: url.hostname,
-      port: url.port || 443,
-      path: url.pathname + url.search,
+      hostname: "flightgoexpress.com",
+      port: 443,
+      path: "/api/track",
       method: method,
       headers: {
         ...headers,
         "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(dataString)
+        "Content-Length": Buffer.byteLength(dataString),
+        "User-Agent": "TrackFlow-FlightGoAdapter/1.0",
+        "Accept": "application/json"
       }
     };
 
@@ -131,10 +136,10 @@ function makeRequest(urlStr, method, headers, payload) {
       });
     });
 
-    req.on("error", reject);
+    req.on("error", (err) => reject(new AppError(502, `Network failure connecting to FlightGo: ${err.message}`)));
     req.setTimeout(12000, () => {
       req.destroy();
-      reject(new Error("FlightGo connection timed out"));
+      reject(new AppError(504, "FlightGo connection timed out after 12 seconds"));
     });
 
     if (dataString) {
@@ -146,21 +151,26 @@ function makeRequest(urlStr, method, headers, payload) {
 
 async function trackFlightGo(awbNumber, config = {}) {
   const cleanAwb = String(awbNumber).trim();
-  const apiKey = config.apiKey || process.env.FLIGHTGO_API_KEY || "17d734f482";
+  const apiKey = config.apiKey || process.env.FLIGHTGO_API_KEY;
   const username = config.username || process.env.FLIGHTGO_USERNAME || "";
   const password = config.password || process.env.FLIGHTGO_PASSWORD || "";
+  const isMockEnabled = process.env.ENABLE_MOCK === "true";
 
-  // 1. If matching demo AWB and no external credentials specified, use sample
-  if (SAMPLE_FLIGHTGO[cleanAwb] && !username && apiKey === "17d734f482") {
+  // 1. If mock mode is explicitly enabled, return demo fixture if available
+  if (isMockEnabled && SAMPLE_FLIGHTGO[cleanAwb]) {
     return normalizeFlightGo(SAMPLE_FLIGHTGO[cleanAwb]);
   }
 
-  // 2. Prepare headers & payload
-  const headers = {
-    "User-Agent": "ParcelTracker-Node/1.0",
-    "Accept": "application/json"
-  };
+  // 2. Validate API key presence (No hardcoded fallbacks!)
+  if (!apiKey) {
+    throw new AppError(
+      500,
+      "FlightGo API Key is not configured. Please set FLIGHTGO_API_KEY in your .env configuration."
+    );
+  }
 
+  // 3. Prepare headers & payload
+  const headers = {};
   if (username && password) {
     const authString = Buffer.from(`${username}:${password}`).toString("base64");
     headers["Authorization"] = `Basic ${authString}`;
@@ -171,78 +181,75 @@ async function trackFlightGo(awbNumber, config = {}) {
     awb_no: cleanAwb
   };
 
-  try {
-    // Try POST first (most standard for APIs taking JSON body)
-    let res = await makeRequest("https://flightgoexpress.com/api/track", "POST", headers, payload);
-    
-    // If POST is not allowed (405), try GET with payload body using native https
-    if (res.status === 405 || (res.body && res.body.status !== "success" && !res.body.data)) {
-      res = await makeRequest("https://flightgoexpress.com/api/track", "GET", headers, payload);
-    }
-
-    if (res.body && res.body.status === "success" && res.body.data) {
-      return normalizeFlightGo(res.body.data);
-    }
-
-    // Also check query param GET fallback: /api/track?api_key=...&awb_no=...
-    if (!res.body || !res.body.data) {
-      const queryUrl = `https://flightgoexpress.com/api/track?api_key=${encodeURIComponent(apiKey)}&awb_no=${encodeURIComponent(cleanAwb)}`;
-      const getRes = await makeRequest(queryUrl, "GET", headers, null);
-      if (getRes.body && getRes.body.status === "success" && getRes.body.data) {
-        return normalizeFlightGo(getRes.body.data);
-      }
-    }
-
-    if (res.body && res.body.message) {
-      throw new Error(res.body.message);
-    } else {
-      throw new Error(`FlightGo responded with status ${res.status}`);
-    }
-
-  } catch (err) {
-    // Graceful fallback to demo sample if testing sample AWB
-    if (SAMPLE_FLIGHTGO[cleanAwb]) {
-      return normalizeFlightGo(SAMPLE_FLIGHTGO[cleanAwb]);
-    }
-    throw new Error(`FlightGo API error: ${err.message}`);
+  // 4. Execute request with POST first, then GET fallback
+  let res = await requestFlightGo("POST", headers, payload);
+  if (res.status === 405 || (res.body && res.body.status !== "success" && !res.body.data)) {
+    res = await requestFlightGo("GET", headers, payload);
   }
+
+  // 5. Explicit HTTP and API Status Verification
+  if (res.status === 401 || res.status === 403) {
+    throw new AppError(502, "FlightGo authentication failed. Please verify FLIGHTGO_API_KEY and credentials.");
+  }
+
+  if (res.status === 404) {
+    throw new AppError(404, `Shipment not found for AWB: ${cleanAwb}`);
+  }
+
+  if (!res.body || res.body.status !== "success" || !res.body.data) {
+    const errorMsg = (res.body && res.body.message) || `Shipment not found for AWB: ${cleanAwb}`;
+    throw new AppError(404, errorMsg);
+  }
+
+  return normalizeFlightGo(res.body.data);
 }
 
 function normalizeFlightGo(data) {
-  const statusRaw = (data.status || "in_transit").toLowerCase();
+  const rawStatus = (data.status || "in_transit").toLowerCase();
+  const status = normalizeShipmentStatus(rawStatus);
+
+  // Parse and sort checkpoints chronologically
+  const rawDetails = Array.isArray(data.tracking_details) ? data.tracking_details : [];
   
-  let status = statusRaw;
-  if (["return_to_sender", "hold", "failure"].includes(statusRaw)) {
-    status = "exception";
-  }
+  const parsedCheckpoints = rawDetails.map((item) => {
+    const parsedTime = parseEventTimestamp(item.timestamp || "");
+    const msg = String(item.message || "Status update").trim();
+    return {
+      rawDate: parsedTime.date,
+      timestamp: parsedTime.display,
+      iso: parsedTime.iso,
+      status: msg,
+      location: item.location || "In Transit",
+      description: msg,
+      milestone: inferMilestone(msg) // Individual event milestone derived from its own message
+    };
+  });
 
-  const checkpoints = (data.tracking_details || []).map(item => ({
-    timestamp: item.timestamp || "",
-    status: item.message ? item.message.slice(0, 55) + (item.message.length > 55 ? "..." : "") : "Scan update",
-    location: item.location || "In Transit",
-    description: item.message || "",
-    milestone: status
-  }));
+  // Sort checkpoints newest first for timeline view
+  parsedCheckpoints.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
 
-  // Calculate delivery progress
-  let progress = 65;
-  if (status === "delivered") progress = 100;
-  else if (status === "out_for_delivery") progress = 85;
-  else if (status === "pre_transit") progress = 20;
+  const latestScan = parsedCheckpoints[0] || {};
 
   return {
     tracking_number: data.tracking_code,
     carrier: "FlightGo Express",
+    carrier_code: "flightgo",
     status,
     status_text: status.replace(/_/g, " ").toUpperCase(),
     origin: "Nadiad, India",
     destination: data.destination || "International",
     estimated_delivery: data.est_delivery_date || null,
-    last_update: checkpoints[0] ? checkpoints[0].timestamp : "",
-    service: "International Express Delivery",
+    last_update: latestScan.timestamp || data.created_at || "Recent",
+    service: "International Express Priority",
     weight: data.weight ? `${data.weight} kg` : null,
-    progress_percentage: progress,
-    checkpoints,
+    progress_percentage: calculateProgress(status),
+    checkpoints: parsedCheckpoints.map(c => ({
+      timestamp: c.timestamp,
+      status: c.status,
+      location: c.location,
+      description: c.description,
+      milestone: c.milestone
+    })),
     provider: "flightgo",
     meta: {
       consignee: data.co_full_name,
@@ -252,4 +259,4 @@ function normalizeFlightGo(data) {
   };
 }
 
-module.exports = { trackFlightGo };
+module.exports = { trackFlightGo, normalizeFlightGo };

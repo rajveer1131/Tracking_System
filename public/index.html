@@ -88,13 +88,9 @@
           <!-- Carrier Dropdown (Can be hidden via .env HIDE_CARRIER_PROVIDER) -->
           <div id="carrierSelectContainer" class="relative sm:w-48 flex-shrink-0">
             <select id="carrierSelect" class="w-full h-12 bg-white text-slate-700 text-sm font-medium rounded-xl border border-slate-300 pl-3 pr-8 focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none cursor-pointer">
-              <option value="auto">⚡ Auto-Detect</option>
-              <option value="flightgo" selected>✈️ FlightGo Express</option>
-              <option value="fedex">FedEx</option>
-              <option value="ups">UPS</option>
-              <option value="dhl">DHL Express</option>
-              <option value="usps">USPS</option>
-              <option value="custom">Custom API</option>
+              <option value="auto" selected>⚡ Auto-Detect</option>
+              <option value="flightgo">✈️ FlightGo Express</option>
+              <option value="cargo">📦 Air Cargo (AWB)</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -110,7 +106,7 @@
               type="text" 
               id="trackingInput" 
               value="658504"
-              placeholder="Enter tracking number (e.g. 658504)..." 
+              placeholder="Enter tracking number (e.g. 658504 or DK00001)..." 
               required
               class="w-full h-12 bg-white text-slate-900 text-sm sm:text-base rounded-xl border border-slate-300 pl-11 pr-4 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder:text-slate-400"
             />
@@ -139,8 +135,8 @@
           <button type="button" onclick="quickFill('27092730')" class="px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 hover:bg-blue-100 transition shadow-sm">
             #27092730 • In Transit
           </button>
-          <button type="button" onclick="quickFill('8472910')" class="px-3 py-1 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-200 hover:bg-amber-100 transition shadow-sm">
-            #8472910 • Out for Delivery
+          <button type="button" onclick="quickFill('DK00001')" class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 hover:bg-indigo-100 transition shadow-sm">
+            #DK00001 • Cargo Delivered
           </button>
         </div>
       </div>

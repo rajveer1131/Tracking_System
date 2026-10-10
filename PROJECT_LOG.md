@@ -1,153 +1,104 @@
-# 📝 Project Log: Design Decisions, Thoughts & Changelog
+# 📝 Project Log: Architecture, Security Audit & Changelog
 
-**Project**: Universal White-Label Shipment Tracker  
+**Project**: Universal White-Label Shipment & Airway Bill Tracker  
 **Configured Brand**: B.S. International  
 **Stack**: Node.js, Express, Vanilla JavaScript, Tailwind CSS  
 **Target Hosting Cost**: $0 / month (Vercel / Render Free Tier)  
+**Location**: `/home/r-linux/Documents/Github/Tracking_System`  
 
 ---
 
-## 1. Project Motivation & Core Goals
+## 1. Project Overview & Multi-Carrier Capabilities
 
-The goal of this project was to build a clean, modern tracking website where an operator can attach external courier/cargo APIs (starting with FlightGo Express) and present a unified, beautiful tracking experience to their customers.
+This project is a white-label shipment tracking service that connects multiple real-world logistics APIs and presents a unified, branded tracking interface to customers.
 
-### Key Requirements:
-1. **$0 / Minimal Cost Hosting**: Capable of running permanently on free-tier platforms without server maintenance overhead.
-2. **Pluggable API Architecture**: Easy to connect different APIs (FlightGo, Ship24, internal custom REST APIs) without rewriting the frontend.
-3. **White-Label Branding**: Configurable per user/client (e.g., *B.S. International*) via environment variables (`.env`).
-4. **Stealth Mode**: Completely hiding which underlying API/courier is being used so end-users only see the company brand and the tracking updates.
-
----
-
-## 2. Key Architecture Decisions & Technical Thoughts
-
-### Decision 1: The Adapter Pattern
-* **Problem**: Every courier API returns completely different JSON shapes:
-  - FlightGo returns `{ data: { tracking_code, status, tracking_details: [{ message, location, timestamp }] } }`.
-  - Ship24 returns `{ data: { trackings: [{ events: [...] }] } }`.
-  - Other carriers return nested arrays with different milestone codes.
-* **Solution**: Implemented the **Adapter Design Pattern** in `adapters/`.
-  - Each courier has its own adapter (`adapters/flightgo.js`, `adapters/mock.js`).
-  - Adapters normalize external responses into a single standard Data Transfer Object (DTO):
-    ```javascript
-    {
-      tracking_number: "658504",
-      carrier: "B.S. International",
-      status: "delivered", // pre_transit, in_transit, out_for_delivery, delivered, exception
-      status_text: "DELIVERED",
-      destination: "United Kingdom",
-      checkpoints: [...]
-    }
-    ```
-  - **Result**: The UI (`app.js`) is 100% decoupled from courier APIs. Adding a new carrier requires writing only one 20-line adapter.
+### Integrated Courier APIs:
+1. **FlightGo Express**:
+   - Live parcel tracking using AWB numbers (e.g. `658504`, `27092730`).
+   - Authenticated via `FLIGHTGO_API_KEY` (and optional Basic Auth).
+2. **Air Cargo Logistics (Bearer Token)**:
+   - Live airway bill tracking via `GET {base_url}/tracking?airway_bill={awb}`.
+   - Authenticated via `Authorization: Bearer <token>`.
+   - Supports checkpoints with dates, times, locations, and remarks (e.g. `DK00001`).
+3. **Demo / Mock Fixtures**:
+   - Strictly isolated behind `ENABLE_MOCK=true`.
+   - Nonexistent tracking numbers return a clean `404 Not Found` in production.
 
 ---
 
-### Decision 2: Switching from Python to 100% Node.js / Express
-* **Initial State**: Built with Python 3's built-in standard library to achieve zero-dependency execution.
-* **Why We Switched**: 
-  - The developer's primary background is in **Node.js** and **Spring Boot**.
-  - Node.js provides a familiar mental model (`express`, `req`/`res`, async/await, npm packages).
-  - Cleaned up all Python files (`server.py`, `test_suite.py`, `.py` adapters) to keep the repository unified and maintainable in a single language.
+## 2. Security Audit & ChatGPT Code Review Resolutions
+
+A code audit conducted on the repository identified several areas for hardening. Below is a record of each finding and how it was addressed:
+
+| Finding | Severity | Resolution Implemented |
+| :--- | :--- | :--- |
+| **Hardcoded API Key in Code & README** | High | Removed `17d734f482` fallback from `adapters/flightgo.js` and `README.md`. Credentials are now strictly enforced via `process.env.FLIGHTGO_API_KEY`. If missing, the server logs a configuration error rather than falling back to an exposed secret. Added `.gitignore` to prevent `.env` from ever being pushed to Git. |
+| **Fabricated Results for Unknown Numbers** | High | Deleted sha256 hash generation from `adapters/mock.js`. In production (`ENABLE_MOCK=false`), unknown or invalid tracking numbers always return a clean `404 Not Found` with a clear message (`"Shipment not found for AWB: ..."`). |
+| **Carrier Detection & Ambiguity** | Medium | Built explicit carrier resolution (`adapters/index.js`). Supports `carrier=flightgo`, `carrier=cargo`, and `carrier=auto`. Documented AWB patterns auto-route cleanly; invalid carriers are rejected with `400 Bad Request`. |
+| **Tracking History & Milestone Overwriting** | Medium | Built `adapters/utils.js`. Past checkpoints no longer inherit the top-level shipment milestone. Each event calculates its own milestone (`inferMilestone`) from its actual scan remark. Checkpoints are sorted chronologically (newest first for display). Full message descriptions are preserved. |
+| **Lack of Rate Limiting & Input Validation** | Medium | Added in-memory sliding-window rate limiter in `server.js` (60 req/min per IP) returning `429 Too Many Requests`. Added input validation enforcing 3–50 alphanumeric characters and rejecting script injection attempts. |
+| **Vercel Serverless Export Conflict** | Low | Updated `server.js` to only run `app.listen` when executed standalone (`if (require.main === module)`), and export `module.exports = app` for Vercel's serverless runtime. |
 
 ---
 
-### Decision 3: Resolving Node.js Fetch "GET with Body" Limitation
-* **Problem**: 
-  FlightGo Express's API documentation specifies a `GET` request with a JSON body:
-  ```bash
-  curl --request GET 'https://flightgoexpress.com/api/track' --data '{"api_key": "...", "awb_no": "..."}'
-  ```
-  When calling `fetch(url, { method: "GET", body: ... })`, modern Node.js throws:
-  ```
-  TypeError: Request with GET/HEAD method cannot have body.
-  ```
-  (This is enforced by the W3C Fetch standard).
-* **Solution**:
-  - Replaced `fetch` with Node's native `https.request` module in `adapters/flightgo.js`.
-  - Node's `https` module does not have the W3C restriction and allows writing to request streams.
-  - Implemented automatic fallback: tries `POST` first (standard for JSON payloads), falls back to `GET` with body stream, and then fallback to URL query parameters (`?api_key=...&awb_no=...`).
+## 3. Architecture Overview
+
+```
+                      ┌──────────────────────┐
+                      │    Client Request    │
+                      │ (Web UI or REST API) │
+                      └──────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │   Express Middleware  │
+                     │ • Rate Limiter (60/m) │
+                     │ • Input Validation    │
+                     │ • CORS & Body Parser  │
+                     └───────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │   Provider Registry   │
+                     │  (adapters/index.js)  │
+                     └─────┬───────────┬─────┘
+                           │           │
+            ┌──────────────▼───┐   ┌───▼──────────────┐
+            │ FlightGo Adapter │   │  Cargo Adapter   │
+            │ (adapters/       │   │ (adapters/       │
+            │  flightgo.js)    │   │  cargo.js)       │
+            └──────────────┬───┘   └───┬──────────────┘
+                           │           │
+                     ┌─────▼───────────▼─────┐
+                     │ Event Normalizer &    │
+                     │ Milestone Inference   │
+                     │ (adapters/utils.js)   │
+                     └───────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │ White-Label Sanitizer │
+                     │ (Masks carrier name   │
+                     │ to B.S. International)│
+                     └───────────┬───────────┘
+                                 │
+                      ┌──────────▼──────────┐
+                      │ Unified 200/404 JSON│
+                      └─────────────────────┘
+```
 
 ---
 
-### Decision 4: White-Labeling & Stealth Mode
-* **Problem**: 
-  When sharing the site or deploying for a client, the operator wanted:
-  1. The ability to rename the portal to their company name (e.g., *B.S. International*).
-  2. To hide that a third-party courier (FlightGo Express) is fulfilling the shipment.
-* **Solution**:
-  - Controlled via `.env`:
-    ```env
-    BRAND_NAME="B.S. International"
-    BRAND_TAGLINE="Global Express Courier & Cargo"
-    HIDE_CARRIER_PROVIDER=true
-    ```
-  - **Backend Layer**: If `HIDE_CARRIER_PROVIDER=true`, `adapters/index.js` automatically masks `result.carrier = process.env.BRAND_NAME` and `result.service = "${BRAND_NAME} Priority Express"`.
-  - **Frontend Layer**: `public/app.js` pulls `/api/branding` and:
-    - Sets page title, header logo, and hero banners to the custom brand.
-    - Hides the carrier dropdown selector.
-    - Hides all "Engine" and "API" badges.
+## 4. Test Suite (`npm test`)
 
----
+The project includes an automated test suite in `tests/test_tracker.js` using Node.js's built-in test runner (`node --test`).
 
-### Decision 5: Clean Sample Order Pills
-* **Problem**: 
-  Initial demo pills showed external company logos (`FedEx In Transit`, `UPS Out for Delivery`, `FlightGo AWB 658504`). This broke white-label stealth mode.
-* **Solution**:
-  - Replaced all branded pills with neutral Order / AWB IDs:
-    - `#658504 • Delivered`
-    - `#27092730 • In Transit`
-    - `#8472910 • Out for Delivery`
-  - Clicking any pill auto-fills the input and executes the tracking pipeline under the *B.S. International* brand without exposing third-party services.
+**Coverage includes:**
+1. **Carrier Resolution**: Validates pattern routing for numeric AWBs, DK prefixes, explicit carrier overrides, and 400 rejection for unsupported carriers.
+2. **Milestone Inference**: Tests that scan remarks (pickup, departed, customs, out for delivery, delivered, failed) are accurately mapped to milestones.
+3. **FlightGo Normalization**: Tests schema conversion, sorting, and preservation of past event milestones.
+4. **Cargo Normalization**: Tests Bearer Token API array parsing, date/time combination, and origin/destination derivation.
+5. **No Fake Results**: Confirms unknown tracking numbers are strictly rejected with 404 in production.
+6. **Express Server Security**: Boots a dynamic port test server to verify `/health`, `/api/branding`, input validation, script injection rejection, and error responses.
 
----
-
-## 3. Changelog
-
-### Version 1.0.0 — Initial Release
-- Built modular tracking core with Base Tracker Adapter and Mock Generator.
-- Created responsive UI with progress milestones, highlights cards, and vertical scan timeline.
-- Added recent inquiries tracking in browser `localStorage`.
-- Configured $0 free-tier deployment options (Vercel serverless, Render).
-
-### Version 1.1.0 — FlightGo Express Integration
-- Added dedicated `FlightGoAdapter` supporting AWB lookup with API keys and Basic Auth.
-- Implemented historical audit log parsing (preserving 2024 checkpoint timestamps).
-- Added multi-status normalization (`pre_transit`, `in_transit`, `out_for_delivery`, `delivered`, `exception`).
-
-### Version 1.2.0 — Migration to Pure Node.js
-- Removed all Python files (`server.py`, `test_suite.py`, `render.yaml`, `api/`).
-- Built Express backend (`server.js`) with static asset routing and REST endpoints.
-- Ported all adapters to pure JavaScript (`adapters/flightgo.js`, `adapters/mock.js`, `adapters/index.js`).
-- Moved project to permanent GitHub directory: `/home/r-linux/Documents/Github/parcel-tracker`.
-
-### Version 1.3.0 — White-Labeling & Stealth Mode
-- Added `.env` configuration for custom brand names (`BRAND_NAME="B.S. International"`).
-- Added `/api/branding` endpoint for dynamic UI customization.
-- Enabled `HIDE_CARRIER_PROVIDER=true` to suppress third-party API exposure.
-- Fixed Node.js `fetch` GET-body constraint by implementing native `https.request` fallback.
-- Sanitized demo sample buttons to display Order IDs instead of courier brand names.
-- Configured `.gitignore` to prevent secret API keys from leaking to GitHub.
-
----
-
-## 4. How to Add a New Carrier in the Future
-
-To connect an additional courier in the future:
-1. Create a new file in `adapters/yourcarrier.js`.
-2. Implement the `track(number)` function returning the unified format:
-   ```javascript
-   async function track(number) {
-     const raw = await callApi(number);
-     return {
-       tracking_number: number,
-       status: "in_transit",
-       status_text: "IN TRANSIT",
-       destination: "...",
-       checkpoints: [...]
-     };
-   }
-   module.exports = { track };
-   ```
-3. Register the adapter in `adapters/index.js`.
-4. Done! The frontend will automatically display the new carrier's updates without any UI modifications.
+Run tests anytime with:
+```bash
+npm test
+```
